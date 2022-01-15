@@ -1,16 +1,18 @@
 # JNI Bind 
   
-`JNI Bind` is a new metaprogramming library that provides syntactic sugar for `C++` => `Java/Kotlin`.  It is header only, and can be easily included even without Bazel support.
+`JNI Bind` is a new metaprogramming library that provides syntactic sugar for `C++` => Java/Kotlin.  It is header only, and can be easily included even without Bazel support.  It provides sophisticated type conversion with compile time validation of method calls and field accesses.
 
-It requires the clang enabled at C++17 or later.  It is compatible with Android.
+It requires clang enabled at C++17 or later.  It is compatible with Android.
 
 ## Table of Contents
 - [About JNI Bind](#about)
 - [Quickstart](#quickstart-without-bazel)
 - [Usage](#usage)
   - [Classes](#classes)
+  - [Local and Global Objects](#local_and_global_objects)
   - [Methods](#methods)
   - [Fields](#fields)
+  - [Constructors](#constructors)
 - [Advanced Usage](#advanced-usage)
   - [Multhreading](#multi-threading) 
   - [Class Loaders](#class-loaders)
@@ -38,7 +40,7 @@ If you want to jump right in, simply copy [jni_bind_release.h](jni_bind_release.
 
 You are responsible for ensuring `#include <jni.h>` is successful.  Given the WORKSPACE the following is sufficient:
 
-```
+```starlark
 cc_library(                                                                                          
     name = "Foo",                                                                                    
     hdrs = [                                                                                         
@@ -77,24 +79,38 @@ http_archive(
 
 JNI Bind requires some minor bookkeeping in order to ensure acccess to a valid `JNIEnv*` as well cached `jMethodIDs`, `jclass`, etc.  The simplest way to do this is to include it in your `JNI_OnLoad` call.  Ensure this object outlives any JNI Bind call or object's lifetime.
 
-```
+```cpp
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* pjvm, void* reserved) {
   static std::unique_ptr<jni::JvmRef<jni::kDefaultJvm>> jvm {pjvm};
   return JNI_VERSION_1_6;
 }
 ```
-@:information_source: If you are using an existing JNI Library initialise JNI Bind after. JNI Bind "attaches" the thread explicitly through JNI, and some libraries behaviour will be conditional on this. 
+:warning: If you using another JNI Library initialise JNI Bind after. JNI Bind "attaches" the thread explicitly through JNI, and some libraries behaviour will be conditional on this. 
 
 <a name="classes"></a>
 ## Classes
 
-Class definitions are the corne
+Class definitions are the basic mechanism by which you interact with Java through JNI and resemble the following:
+
+ ```cpp
+ static constexpr jni::class kClass{"com/full/class/name/JavaClassName", jni::Field..., jni::Method... };
+ ```
+
+Class definitions are static (the class names of any Java object is known in advance).  Instances of these classes are created at runtime using [`jni::LocalObject`](local_object.h) or [`jni::GlobalObject`](global_object.h).
+
+<a name="local_and_global_objects"></a>
+## Local and Global Objects
+
+Local and global objects manage lifetimes of underlying `jobjects` using the normal RAII mechanism of C++. **`jni::LocalObject` always fall off scope at the conclusion of the surrounding JNI call and are valid only to a single thread**, however jni::GlobalObject may be held indefinitely and is thread safe.
 
 <a name="method_definitions"></a>
 ## Methods
 
 <a name="fields"></a>
 ## Fields
+
+<a name="constructors"></a>
+## Constructors
 
 
 <a name="license"></a>
