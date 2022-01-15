@@ -8,9 +8,9 @@ It requires the clang enabled at C++17 or later.  It is compatible with Android.
 - [About JNI Bind](#about)
 - [Quickstart](#quickstart-without-bazel)
 - [Usage](#usage)
-  - [Class Definitions](#class-definitions)
+  - [Classes](#classes)
   - [Methods](#methods)
-  - 
+  - [Fields](#fields)
 - [Advanced Usage](#advanced-usage)
   - [Multhreading](#multi-threading) 
   - [Class Loaders](#class-loaders)
@@ -69,21 +69,32 @@ http_archive(
 )
 ```
 
-<a name="Usage"></a>
+<a name="usage"></a>
 # Usage
 
 <a name="jvm_lifecycle"></a>
 ## JVM Lifecycle
 
--- Jvm 
+JNI Bind requires some minor bookkeeping in order to ensure acccess to a valid `JNIEnv*` as well cached `jMethodIDs`, `jclass`, etc.  The simplest way to do this is to include it in your `JNI_OnLoad` call.  Ensure this object outlives any JNI Bind call or object's lifetime.
 
-<a name="class_definitions"></a>
-## Class Definitions
+```
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* pjvm, void* reserved) {
+  static std::unique_ptr<jni::JvmRef<jni::kDefaultJvm>> jvm {pjvm};
+  return JNI_VERSION_1_6;
+}
+```
+@:information_source: If you are using an existing JNI Library initialise JNI Bind after. JNI Bind "attaches" the thread explicitly through JNI, and some libraries behaviour will be conditional on this. 
 
-Classes are...
+<a name="classes"></a>
+## Classes
+
+Class definitions are the corne
 
 <a name="method_definitions"></a>
-## Method Definitions
+## Methods
+
+<a name="fields"></a>
+## Fields
 
 
 <a name="license"></a>
