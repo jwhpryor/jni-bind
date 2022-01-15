@@ -6,7 +6,15 @@ It requires the clang enabled at C++17 or later.  It is compatible with Android.
 
 ## Table of Contents
 - [About JNI Bind](#about)
-- [Quickstart](#quickstart)
+- [Quickstart](#quickstart-without-bazel)
+- [Usage](#usage)
+  - [Class Definitions](#class-definitions)
+  - [Methods](#methods)
+  - 
+- [Advanced Usage](#advanced-usage)
+  - [Multhreading](#multi-threading) 
+  - [Class Loaders](#class-loaders)
+  - [Arrays](#arrays)
 - [License](#license)
 
 <a name="about"></a>
@@ -22,19 +30,6 @@ It requires the clang enabled at C++17 or later.  It is compatible with Android.
   - **Arrays** (inline object construction for method arguments, efficient pinning of existing spans).
   - **JVM Management** Power users who want to manage multiple JVM lifetimes in a single process.
   - And *much* more!
-
-<a name="quickstart_with_bazel"></a>
-## Quickstart *with Bazel*
-
-If you're already using Bazel add the following to your WORKSPACE:
-
-```
-http_archive(                                                                                        
-  name = "jni-bind",                                                                                 
-  urls = ["https://github.com/google/jni-bind/archive/refs/tags/Release-0.1.0-alpha.zip"],           
-  strip_prefix = "jni-bind-Release-0.1.0-alpha",                                                     
-)
-```
 
 <a name="quickstart_without_bazel"></a>
 ## Quickstart *without Bazel*
@@ -61,10 +56,35 @@ cc_library(
 )
 ```
 
+<a name="quickstart_with_bazel"></a>
+## Quickstart *with Bazel*
+
+If you're already using Bazel add the following to your WORKSPACE:
+
+```
+http_archive(                                                                                        
+  name = "jni-bind",                                                                                 
+  urls = ["https://github.com/google/jni-bind/archive/refs/tags/Release-0.1.0-alpha.zip"],           
+  strip_prefix = "jni-bind-Release-0.1.0-alpha",                                                     
+)
+```
+
 <a name="Usage"></a>
 # Usage
 
-## Define Classes
+<a name="jvm_lifecycle"></a>
+## JVM Lifecycle
+
+-- Jvm 
+
+<a name="class_definitions"></a>
+## Class Definitions
+
+Classes are...
+
+<a name="method_definitions"></a>
+## Method Definitions
+
 
 <a name="license"></a>
 ## License
