@@ -9,10 +9,11 @@ It requires clang enabled at C++17 or later.  It is compatible with Android.
 - [Quickstart](#quickstart-without-bazel)
 - [Usage](#usage)
   - [Classes](#classes)
-  - [Local and Global Objects](#local_and_global_objects)
-  - [Methods](#methods)
+  - [Local and Global Objects](#local-and-global-objects)
   - [Fields](#fields)
+  - [Methods](#methods)
   - [Constructors](#constructors)
+  - [Type Conversion](#type-conversion)
 - [Advanced Usage](#advanced-usage)
   - [Multhreading](#multi-threading) 
   - [Class Loaders](#class-loaders)
@@ -21,10 +22,10 @@ It requires clang enabled at C++17 or later.  It is compatible with Android.
 
 <a name="about"></a>
 ## About JNI Bind
-`JNI Bind` was originally developed at Google for use in various Android system services to simplify overly complicated JNI code.  `JNI Bind` handles boilerplate code with very little overhead and frequently can result in performance wins.
+`JNI Bind` was originally developed at Google to simplify confusing verbose JNI boilerplate code. It has minimal overhead and provides extensive, intuitive type conversions.
 
 **Many** features and optimisations are included:
-  - **Object Management** Rich expression for local and global objects.
+  - **Object Management**
   - **Static signature generation and validation** (code calling invalid method names fail to build).
   - **Static cacheing of IDs** such as `jmethodID` and `jclass` with correct cacheing strategies for multi-threading.
   - **Classes** (including native construction and compile time argument validation).
@@ -33,12 +34,12 @@ It requires clang enabled at C++17 or later.  It is compatible with Android.
   - **JVM Management** Power users who want to manage multiple JVM lifetimes in a single process.
   - And *much* more!
 
-<a name="quickstart_without_bazel"></a>
+<a name="quickstart-without-bazel"></a>
 ## Quickstart *without Bazel*
 
 If you want to jump right in, simply copy [jni_bind_release.h](jni_bind_release.h) into your own project.  The header itself is a automatically generated "flattened" version of the Bazel dependency set, so the documentation is a much simpler introduction to `JNI Bind` than attempting to read through it directly.
 
-You are responsible for ensuring `#include <jni.h>` is successful.  Given the WORKSPACE the following is sufficient:
+You are responsible for ensuring `#include <jni.h>` is successful.  E.g. given the `WORKSPACE` above this is a sufficient build target:
 
 ```starlark
 cc_library(                                                                                          
@@ -74,10 +75,10 @@ http_archive(
 <a name="usage"></a>
 # Usage
 
-<a name="jvm_lifecycle"></a>
+<a name="jvm-lifecycle"></a>
 ## JVM Lifecycle
 
-JNI Bind requires some minor bookkeeping in order to ensure acccess to a valid `JNIEnv*` as well cached `jMethodIDs`, `jclass`, etc.  The simplest way to do this is to include it in your `JNI_OnLoad` call.  Ensure this object outlives any JNI Bind call or object's lifetime.
+JNI Bind requires some minor bookkeeping in order to ensure acccess to a valid `JNIEnv*` as well cached `jMethodIDs`, `jclass`, etc.  The simplest way to do this is to include it in your `JNI_OnLoad` call.  Ensure this object outlives the surrounding `JNI` call or object's lifetime.
 
 ```cpp
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* pjvm, void* reserved) {
@@ -85,33 +86,98 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* pjvm, void* reserved) {
   return JNI_VERSION_1_6;
 }
 ```
-:warning: If you using another JNI Library initialise JNI Bind after. JNI Bind "attaches" the thread explicitly through JNI, and some libraries behaviour will be conditional on this. 
+:warning: If you using another JNI Library initialise `JNI Bind` after. `JNI Bind` "attaches" the thread explicitly through JNI, and some libraries behaviour will be conditional on this being unset.  If JNI Bind discovers a thread has been attached previously it will not attempt to tear the thread down on teardown. 
 
 <a name="classes"></a>
 ## Classes
 
 Class definitions are the basic mechanism by which you interact with Java through JNI and resemble the following:
 
- ```cpp
- static constexpr jni::class kClass{"com/full/class/name/JavaClassName", jni::Field..., jni::Method... };
- ```
+```cpp
+static constexpr jni::class kClass{"com/full/class/name/JavaClassName", jni::Field..., jni::Method... };
+```
 
 Class definitions are static (the class names of any Java object is known in advance).  Instances of these classes are created at runtime using [`jni::LocalObject`](local_object.h) or [`jni::GlobalObject`](global_object.h).
 
-<a name="local_and_global_objects"></a>
+<a name="local-and-global-objects"></a>
 ## Local and Global Objects
 
-Local and global objects manage lifetimes of underlying `jobjects` using the normal RAII mechanism of C++. **`jni::LocalObject` always fall off scope at the conclusion of the surrounding JNI call and are valid only to a single thread**, however jni::GlobalObject may be held indefinitely and is thread safe.
+Local and global objects manage lifetimes of underlying `jobjects` using the normal RAII mechanism of C++. **`jni::LocalObject` always fall off scope at the conclusion of the surrounding JNI call and are valid only to a single thread, however `jni::GlobalObject` may be held indefinitely and are thread safe**.
 
-<a name="method_definitions"></a>
-## Methods
+`jni::LocalObject` is built by either wrapping constructing it from a `jobject` passed to native JNI from Java, or constructing a new object from native (see [Constructors](constructors)).
+
+When `jni::LocalObject` or `jni::GlobalObject` falls off scope, it will unpin the underlying `jobject`, making it available for garbage collection by the JVM.  If you want to to prevent this call `Release()`. This is useful to return a `jobject` back from native, or to simply pass to another native component that isn't JNI Bind aware.
+
+[Sample C++](javatests/com/jnibind/test/context_test_jni.cc), [Sample Java](javatests/com/jnibind/test/ContextTest.java)
 
 <a name="fields"></a>
 ## Fields
 
+A `jni::Field` is described as a field name and a zero value of the underlying type.
+
+```cpp
+static constexpr jni::Field kIntField{"intField", jint{} };
+static constexpr jni::Field kFloatField{"floatField", jfloat{} };
+static constexpr jni::Field kClassField{"kClassField", kClass };
+static constexpr jni::Field kClassField2{"kClassField2", jni::Class{"com/java/kClass" };
+```
+If a class definition contains `jni::Fields` in its definition corresponding objects constructed will be imbued with `operator[]`. Using this operator with the corresponding field name will provide a proxy object with two methods `Get` and `Set`.  e.g.
+
+```cpp
+static constexpr jni::Class kClass { "kClassName", jni::Field{"field_name", jint{} };
+
+jni::LocalObject<kClass> runtime_object{jobj};
+runtime_object["field_name"].Set(5);
+runtime_object["field_name"].Get();
+```
+
+Accessing and setting fields will follow the rules laid out in [Type Conversion Rules](#type-conversion-rules). *Accessing invalid field names won't compile, and `jfieldID`s are cached on your behalf.* 
+
+<a name="method-definitions"></a>
+## Methods
+
+A `jni::Method` is described as a method name, a `jni::Return`, and an optional `jni::Params` containing a variadic pack of zero values of the desired type.
+
+```cpp
+static constexpr jni::Method kIntMethod{"intMethod", jni::Return{jint{}} };
+static constexpr jni::Method kFloatMethod{"floatMethod", jni::Return{jfloat{}}, jni::Params{ jint{}, jfloat{} }};
+static constexpr jni::Method kClassMethod{"kClassMethod", jni::Return{kClass} };
+```
+
+If a class definition contains `jni::Method`s in its definition corresponding objects constructed will be imbued with `operator()`. Using this operator with the corresponding method name will invoke the corresponding method.
+
+```cpp
+static constexpr jni::Class kClass { "kClassName", jni::Method{"intMethod", jni::Return{jint{}} };
+
+jni::LocalObject<kClass> runtime_object{jobj};
+int ret_val = runtime_object("intMethod");
+```
+
+Methods will follow the rules laid out in [Type Conversion Rules](#type-conversion-rules). *Invalid method names won't compile, and `jmethodID`s are cached on your behalf.* 
+
+-  Scope extension when pass as arg
+
 <a name="constructors"></a>
 ## Constructors
 
+If you want to create a new Java object from native code, you can define a `jni::Constructor`.
+
+**If you omit a constructor the default constructor is called, but if any are specified you must explicitly define a no argument constructor.**
+
+Constructors follow the rules laid out in [Type Conversion Rules](#type-conversion-rules). 
+
+<a name="type-conversion-rules"></a>
+## Type Conversion Rules
+
+- [[ TODO ]]
+
+<a name="overloads"></a>
+## Overloads
+
+- [[ TODO ]] 
+
+<a name="forward_declarations"></a>
+## Forward Declarations
 
 <a name="license"></a>
 ## License
