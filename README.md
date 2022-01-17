@@ -13,9 +13,11 @@ It requires clang enabled at C++17 or later.  It is compatible with Android.
   - [Fields](#fields)
   - [Methods](#methods)
   - [Constructors](#constructors)
-  - [Type Conversion](#type-conversion)
+  - [Type Conversion Rules](#type-conversion-rules)
 - [Advanced Usage](#advanced-usage)
-  - [Multhreading](#multi-threading) 
+  - [Forward Class Declarations](#forward-class-declarations)
+  - [Multhreading](#multi-threading)
+  - [Overloads](#overloads) 
   - [Class Loaders](#class-loaders)
   - [Arrays](#arrays)
 - [License](#license)
@@ -64,7 +66,7 @@ cc_library(
 
 If you're already using Bazel add the following to your WORKSPACE:
 
-```
+```starlark
 http_archive(                                                                                        
   name = "jni-bind",                                                                                 
   urls = ["https://github.com/google/jni-bind/archive/refs/tags/Release-0.1.0-alpha.zip"],           
@@ -119,7 +121,7 @@ A `jni::Field` is described as a field name and a zero value of the underlying t
 static constexpr jni::Field kIntField{"intField", jint{} };
 static constexpr jni::Field kFloatField{"floatField", jfloat{} };
 static constexpr jni::Field kClassField{"kClassField", kClass };
-static constexpr jni::Field kClassField2{"kClassField2", jni::Class{"com/java/kClass" };
+static constexpr jni::Field kClassField2{"kClassField2", jni::Class{"com/project/kClass" };
 ```
 If a class definition contains `jni::Fields` in its definition corresponding objects constructed will be imbued with `operator[]`. Using this operator with the corresponding field name will provide a proxy object with two methods `Get` and `Set`.  e.g.
 
@@ -147,7 +149,9 @@ static constexpr jni::Method kClassMethod{"kClassMethod", jni::Return{kClass} };
 If a class definition contains `jni::Method`s in its definition corresponding objects constructed will be imbued with `operator()`. Using this operator with the corresponding method name will invoke the corresponding method.
 
 ```cpp
-static constexpr jni::Class kClass { "kClassName", jni::Method{"intMethod", jni::Return{jint{}} };
+static constexpr jni::Class kClass { "com/project/kClass",
+   jni::Method{"intMethod", jni::Return{jint{}}
+};
 
 jni::LocalObject<kClass> runtime_object{jobj};
 int ret_val = runtime_object("intMethod");
@@ -155,29 +159,70 @@ int ret_val = runtime_object("intMethod");
 
 Methods will follow the rules laid out in [Type Conversion Rules](#type-conversion-rules). *Invalid method names won't compile, and `jmethodID`s are cached on your behalf.* 
 
--  Scope extension when pass as arg
-
 <a name="constructors"></a>
 ## Constructors
 
-If you want to create a new Java object from native code, you can define a `jni::Constructor`.
+If you want to create a new Java object from native code, you can define a `jni::Constructor`cpp, or use the default constructor. **If you omit a constructor the default constructor is called, but if any are specified you must explicitly define a no argument constructor.**
 
-**If you omit a constructor the default constructor is called, but if any are specified you must explicitly define a no argument constructor.**
+```cpp
+static constexpr jni::Class kSomeClass{...};
 
-Constructors follow the rules laid out in [Type Conversion Rules](#type-conversion-rules). 
+static constexpr jni::Class kClass {
+   "com/google/Class",
+   jni::Constructor{jint{}, kSomeClass},
+   jni::Constructor{jint{}},
+   jni::Constructor{},
+};
+
+jni::LocalObject<kClass> obj1{123, jni::LocalObject<kSomeClass>{}};
+jni::LocalObject<kClass> obj2{123};
+jni::LocalObject<kClass> obj3{};  // Compiles only because of jni::Constructor{}.
+```
+
+Constructors follow the arguments rules laid out in [Type Conversion Rules](#type-conversion-rules).  
 
 <a name="type-conversion-rules"></a>
 ## Type Conversion Rules
 
-- [[ TODO ]]
+All JNI types have corresponding `JNI Bind` types. These types are used differently depending on their context.  Sometimes multiple types are valid as an argument, and you can use them interchangeably, however *types are strictly enforced, so you can't pass arguments that might otherwise implictly cast*.  
 
+| JNI C API    | Jni Bind Declaration         | Types valid when used as arg                      | Return Type                                    | 
+| ------------ | ---------------------------- | ------------------------------------------------- | ---------------------------------------------- |
+| void         |                              |                                                   |                                                |
+| jboolean     | jboolean                     | jboolean, bool                                    | jint                                           |
+| jint         | jint                         | jint, int                                         | jint                                           |
+| jfloat       | jfloat, float                | jfloat                                            | jfloat                                         |
+| jdouble      | jdouble, double              | jdouble                                           | jdouble                                        |
+| jlong        | jlong, long                  | jlong                                             | jlong                                          |
+| jobject      | jni::Class kClass            | jobject, jni::LocalObject, jni::GlobalObject[^1]  | jni::LocalObject<kClass>                       |
+| jstring      | jstring                      | jstring, jni::LocalString, jni::GlobalString,     | jni::LocalString                               |
+|              |                              | char*, std::string                                |                                                |
+| jarray       | jni::Array<T>                | jarray, jni::LocalArray, , jlongArray             | jni::LocalArray<T>                             |
+|              |                              | jbooleanArray, jbyteArray, jcharArray,            |                                                |
+|              |                              | jfloatArray, jintArray                            |                                                |
+| jobjectarray | jni::Array<jobject, kClass>  | jarray, jni::LocalArray, , jlongArray             | jni::LocalArray<T>                             |
+
+More conversions will be added later and this table will be updated as they are. In particular `wchar` views into jstrings will offer a zero copy view into java strings.  Also, `jarray` will support `std::span` views for its underlying types.
+
+[^1]:Note, if you pass a `jni::LocalObject` or `jni::GlobalObject`as an rvalue, it will release the underlying jobject (mimicking the same rules used for [const& in C++](https://en.cppreference.com/w/cpp/language/lifetime)).  
+
+<a name="advanced-usage"></a>
+# Advanced Usage
+
+<a name="forward-class-declarations"></a>
+## Forward Class Declarations
+
+<a name="multi-threading"></a>
+## Multhreading  
+  
 <a name="overloads"></a>
 ## Overloads
 
-- [[ TODO ]] 
+<a name="class-loaders"></a>
+## Class Loaders
 
-<a name="forward_declarations"></a>
-## Forward Declarations
+<a name="arrays"></a>
+## Arrays 
 
 <a name="license"></a>
 ## License
