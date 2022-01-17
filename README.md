@@ -212,6 +212,39 @@ More conversions will be added later and this table will be updated as they are.
 <a name="forward-class-declarations"></a>
 ## Forward Class Declarations
 
+Sometimes you need to reference a class that doesn't yet have a corresponding JNI Bind definition (possibly due to a circular dependency or self reference). This can be obviated by defining the class inline.  E.g.
+  
+```cpp
+using jni::Class;
+using jni::Constructor;
+using jni::Return;
+using jni::Method;
+using jni::Params;
+
+static constexpr Class kClass {
+  "com/project/kClass",
+  Method{"returnsNothing", Return<void>{}, Params{Class{"kClass2"}},
+  Method{"returnsKClass", Return{Class"com/project/kClass"}},           // self referential
+  Method{"returnsKClass2", Return{Class"com/project/kClass2"}},          // undefined
+};
+
+static constexpr Class kClass2 {
+  "com/project/kClass2",
+  Constructor{ Class{"com/project/kClass2"} },  // self referential
+  Method{"Foo", Return<void>{}}
+};
+
+LocalObject<kClass> obj1{};
+obj1("returnsNothing", LocalObject<kClass2>{});          // correctly forces kClass2 for arg
+LocalObject<kClass> obj2{ obj1("returnsKClass") };       // correctly forces kClass for return 
+LocalObject shallow_obj{} = obj1("returnsKClass");       // returns unusable but name safe kClass
+// shallow_obj("Foo");                                   // this won't compile as it's only a forward decl
+LocalObject<kClass> rich_obj{ std::move(shallow_obj) };  // promotes the object to a usable version
+LocalObject<kClass2> { obj1("returnsKClass2") };         // materialised from a temporary shallow rvalue
+  
+```
+Note, if you use the output of a forward declaration, it will result in a *shallow* object. You can use this object in calls to other methods or constructors an they will validate as expected.
+  
 <a name="multi-threading"></a>
 ## Multhreading  
   
