@@ -6,7 +6,8 @@ It requires clang enabled at C++17 or later.  It is compatible with Android.
 
 ## Table of Contents
 - [About JNI Bind](#about)
-- [Quickstart](#quickstart-without-bazel)
+- [Quick Intro](#quick-intro)
+- [Installation](#quickstart-without-bazel)
 - [Usage](#usage)
   - [Classes](#classes)
   - [Local and Global Objects](#local-and-global-objects)
@@ -15,6 +16,7 @@ It requires clang enabled at C++17 or later.  It is compatible with Android.
   - [Constructors](#constructors)
   - [Type Conversion Rules](#type-conversion-rules)
 - [Advanced Usage](#advanced-usage)
+  - [Strings](#strings)
   - [Forward Class Declarations](#forward-class-declarations)
   - [Multhreading](#multi-threading)
   - [Overloads](#overloads) 
@@ -24,16 +26,19 @@ It requires clang enabled at C++17 or later.  It is compatible with Android.
 
 <a name="about"></a>
 ## About JNI Bind
-`JNI Bind` was originally developed at Google to simplify confusing verbose JNI boilerplate code. It has minimal overhead and provides extensive, intuitive type conversions.
+`JNI Bind` is a new metaprogramming library that provides syntactic sugar for `C++` => Java/Kotlin.  It is header only, and can be easily included even without Bazel support.  It provides sophisticated type conversion with compile time validation of method calls and field accesses.
+
+It requires clang enabled at C++17 or later.  It is compatible with Android.
 
 **Many** features and optimisations are included:
   - **Object Management**
-  - **Static signature generation and validation** (code calling invalid method names fail to build).
-  - **Static cacheing of IDs** such as `jmethodID` and `jclass` with correct cacheing strategies for multi-threading.
-  - **Classes** (including native construction and compile time argument validation).
-  - **Classloaders** (native object construction, argument validation, object "buildability").
-  - **Arrays** (inline object construction for method arguments, efficient pinning of existing spans).
-  - **JVM Management** Power users who want to manage multiple JVM lifetimes in a single process.
+  - **Compile time method name and argument checking**
+  - **Static cacheing of IDs** *multi-threading support and compile time signature generation*.
+  - **Classes** *native construction, argument validation, lifetime support, method and field support.*
+  - **Classloaders** *native construction, object "buildability".
+  - **JVM Management** *single-process multiple JVM lifecycles.
+  - **Strings** *easy syntax for inline argument construction*.
+  - **Arrays** *inline object construction for method arguments, efficient pinning of existing spans*.
   - And *much* more!
 
 <a name="quickstart-without-bazel"></a>
@@ -225,7 +230,7 @@ static constexpr Class kClass {
   "com/project/kClass",
   Method{"returnsNothing", Return<void>{}, Params{Class{"kClass2"}},
   Method{"returnsKClass", Return{Class"com/project/kClass"}},           // self referential
-  Method{"returnsKClass2", Return{Class"com/project/kClass2"}},          // undefined
+  Method{"returnsKClass2", Return{Class"com/project/kClass2"}},         // undefined
 };
 
 static constexpr Class kClass2 {
@@ -235,25 +240,55 @@ static constexpr Class kClass2 {
 };
 
 LocalObject<kClass> obj1{};
-obj1("returnsNothing", LocalObject<kClass2>{});          // correctly forces kClass2 for arg
-LocalObject<kClass> obj2{ obj1("returnsKClass") };       // correctly forces kClass for return 
-LocalObject shallow_obj{} = obj1("returnsKClass");       // returns unusable but name safe kClass
-// shallow_obj("Foo");                                   // this won't compile as it's only a forward decl
-LocalObject<kClass> rich_obj{ std::move(shallow_obj) };  // promotes the object to a usable version
-LocalObject<kClass2> { obj1("returnsKClass2") };         // materialised from a temporary shallow rvalue
+obj1("returnsNothing", LocalObject<kClass2>{});        // correctly forces kClass2 for arg
+LocalObject<kClass> obj2{ obj1("returnsKClass") };     // correctly forces kClass for return 
+LocalObject shallow_obj{} = obj1("returnsKClass");     // returns unusable but name safe kClass
+// shallow_obj("Foo");                                 // this won't compile as it's only a forward decl
+LocalObject<kClass> rich_obj{std::move(shallow_obj)};  // promotes the object to a usable version
+LocalObject<kClass2> { obj1("returnsKClass2") };       // materialised from a temporary shallow rvalue
   
 ```
 Note, if you use the output of a forward declaration, it will result in a *shallow* object. You can use this object in calls to other methods or constructors an they will validate as expected.
+
+Sample: [proxy_test.cc](proxy_test.cc). 
   
 <a name="multi-threading"></a>
 ## Multhreading  
   
+When using multi-threaded code in native, it's important to remember the difference between maintaining thread safety in your native code vs your Java code. `JNI Bind` *only* handles thread safety of your native handles and class ids.  E.g. you might safely pass a jobect from one native thread to another (i.e. you managed to get the handle correctly to the other thread), however, your Java code may not be expecting calls from multiple threads.
+
+**To pass a jobject from one thread to another *you must use jni::GlobalObject*** (using jni::LocalObject is undefined).
+  
+Upon spinning a new native thread (that isn't the main thread), you must declare a `jni::ThreadGuard` to explicitly announce to JNI the existence of this thread.  It's permissible to to have nested `jni::ThreadGuard`s.
+
+Sample [jvm_test.cc](jvm_test.cc).
+  
 <a name="overloads"></a>
 ## Overloads
 
+Methods can be overloaded just like in regular Java by declaring a name, and then a variadic pack of [`jni::Overload`](method.h). Overloaded methods are invoked like regular methods. `JNI Bind` will correctly differentiate between functions that differ only by type, including functions that take different class types.
+
+static constexpr Class kClass{
+    "com/google/SupportsStrings",
+    Method{
+        "Foo",
+        Overload{jni::Return<void>{}, Params{jint{}}},
+        Overload{jni::Return<void>{}, Params{jstring{}}},
+        Overload{jni::Return<void>{}, Params{jstring{}, jstring{}}},
+    }
+};
+
+LocalObject<kClass> obj{};
+obj("Foo", 1);
+obj("Foo", "arg");  
+obj("Foo", "arg", jstring{nullptr});
+  
+Sample [method_test_jni.cc](javatests/com/jnibind/test/method_test_jni.cc), [MethodTest.java](javatests/com/jnibind/test/MethodTest.java).
+  
 <a name="class-loaders"></a>
 ## Class Loaders
 
+  
 <a name="arrays"></a>
 ## Arrays 
 
