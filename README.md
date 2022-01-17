@@ -1,13 +1,23 @@
 # JNI Bind 
   
-`JNI Bind` is a new metaprogramming library that provides syntactic sugar for `C++` => Java/Kotlin.  It is header only, and can be easily included even without Bazel support.  It provides sophisticated type conversion with compile time validation of method calls and field accesses.
+`JNI Bind` is a new metaprogramming library that provides syntactic sugar for `C++` => `Java/Kotlin`.  It is header only and provides sophisticated type conversion with compile time validation of method calls and field accesses.
 
-It requires clang enabled at C++17 or later.  It is compatible with Android.
+It requires clang enabled at C++17 or later and is compatible with Android and is unit and E2E tested on `x86`/`ARM` toolchains.
+
+**Many** features and optimisations are included:
+  - **Object Management**
+  - **Compile time method name and argument checking**
+  - **Static cacheing of IDs** *multi-threading support and compile time signature generation.*
+  - **Classes** *native construction, argument validation, lifetime support, method and field support.*
+  - **Classloaders** *native construction, object "buildability".*
+  - **JVM Management** *single-process multiple JVM lifecycles.*
+  - **Strings** *easy syntax for inline argument construction.*
+  - **Arrays** *inline object construction for method arguments, efficient pinning of existing spans.*
+  - And *much* more!
 
 ## Table of Contents
-- [About JNI Bind](#about)
 - [Quick Intro](#quick-intro)
-- [Installation](#quickstart-without-bazel)
+- [Installation](#installation-without-bazel)
 - [Usage](#usage)
   - [Classes](#classes)
   - [Local and Global Objects](#local-and-global-objects)
@@ -22,31 +32,73 @@ It requires clang enabled at C++17 or later.  It is compatible with Android.
   - [Overloads](#overloads) 
   - [Class Loaders](#class-loaders)
   - [Arrays](#arrays)
+- [References](#references)
 - [License](#license)
 
-<a name="about"></a>
-## About JNI Bind
-`JNI Bind` is a new metaprogramming library that provides syntactic sugar for `C++` => Java/Kotlin.  It is header only, and can be easily included even without Bazel support.  It provides sophisticated type conversion with compile time validation of method calls and field accesses.
+<a name="quick-intro"></a>
+## Quick Intro
 
-It requires clang enabled at C++17 or later.  It is compatible with Android.
+**JNI is notoriously difficult to use, and numerous libraries exist to try to reduce this complexity**. These libraries usually require code generation (or extensive macro use) which leads to brittle implementation, indexes poorly, and still requires domain expertise in JNI (making code difficult to maintain).
 
-**Many** features and optimisations are included:
-  - **Object Management**
-  - **Compile time method name and argument checking**
-  - **Static cacheing of IDs** *multi-threading support and compile time signature generation*.
-  - **Classes** *native construction, argument validation, lifetime support, method and field support.*
-  - **Classloaders** *native construction, object "buildability".
-  - **JVM Management** *single-process multiple JVM lifecycles.
-  - **Strings** *easy syntax for inline argument construction*.
-  - **Arrays** *inline object construction for method arguments, efficient pinning of existing spans*.
-  - And *much* more!
+**`JNI Bind` is header only (no auto-generation), and it generates robust, easily maintained, and expressive code.** It obeys the regular RAII idioms of C++17 and can help separate JNI symbols in compilation. Classes are provided in `static constexpr` definitions which can be shared across different implementations enabling code re-use.
 
-<a name="quickstart-without-bazel"></a>
-## Quickstart *without Bazel*
+This is a sample  Java class and it's corresponding`JNI Bind` class definition:
 
-If you want to jump right in, simply copy [jni_bind_release.h](jni_bind_release.h) into your own project.  The header itself is a automatically generated "flattened" version of the Bazel dependency set, so the documentation is a much simpler introduction to `JNI Bind` than attempting to read through it directly.
+```java
+package com.project;
+public class Clazz {
+ int Foo(float f, String s) {...}
+}
+```
 
-You are responsible for ensuring `#include <jni.h>` is successful.  E.g. given the `WORKSPACE` above this is a sufficient build target:
+```cpp
+#include "jni_bind_release.h"
+
+static constexpr jni::class kClass {
+  "com/project/clazz", jni::Method { "Foo", jni::Return<jint>{}, jni::Params<jfloat, jstring>{}},
+
+jni::LocalObject<kClass> obj { jobject_to_wrap };
+obj("Foo", 1.5f, "argString");
+```
+
+There are [sample tests](javatests/com/jnibind/test/) which can be a good way to see some example code.  Consider starting with with [context_test_jni](javatests/com/jnibind/test/context_test_jni.cc), [object_test_helper_jni.h](/javatests/com/jnibind/test/object_test_helper_jni.h) and [ContextTest.java](javatests/com/jnibind/test/ContextTest.java).
+
+<a name="installation-without-bazel"></a>
+## Installation *without Bazel*
+
+If you want to jump right in, copy [jni_bind_release.h](jni_bind_release.h) into your own project.  The header itself is an automatically generated "flattened" version of the Bazel dependency set, so this documentation is a simpler introduction to `JNI Bind` than reading the header directly.
+
+You are responsible for ensuring `#include <jni.h>` compiles when you include `JNI Bind`.
+
+<a name="installation-with-bazel"></a>
+## Installation *with Bazel*
+
+If you're already using Bazel add the following to your WORKSPACE:
+
+```starlark
+http_archive(                                                                                        
+  name = "jni-bind",                                                                                 
+  urls = ["https://github.com/google/jni-bind/archive/refs/tags/Release-0.1.0-alpha.zip"],           
+  strip_prefix = "jni-bind-Release-0.1.0-alpha",                                                     
+)
+```
+
+Then include `@jni-bind//:jni_bind` (not `:jni_bind_release`) and `#include "jni_bind.h"`. 
+
+JNI is sometimes difficult to get working in Bazel, so if you don't have an environment already also add this to your `WORKSPACE`, and follow the pattern of the BUILD target below.
+
+```starlark
+# Rules Jvm.
+RULES_JVM_EXTERNAL_TAG = "4.2"
+RULES_JVM_EXTERNAL_SHA = "cd1a77b7b02e8e008439ca76fd34f5b07aecb8c752961f9640dea15e9e5ba1ca"
+
+http_archive(
+    name = "rules_jvm_external",
+    strip_prefix = "rules_jvm_external-%s" % RULES_JVM_EXTERNAL_TAG,
+    sha256 = RULES_JVM_EXTERNAL_SHA,
+    url = "https://github.com/bazelbuild/rules_jvm_external/archive/%s.zip" % RULES_JVM_EXTERNAL_TAG,
+)
+```
 
 ```starlark
 cc_library(                                                                                          
@@ -65,18 +117,13 @@ cc_library(
     ],                                                                                               
 )
 ```
+There are easy to lift samples in [javatests/com/jnibind/test/](javatests/com/jnibind/test/). If you want try building these samples (or to copy the BUILD configuration) you can clone *this* repo.
 
-<a name="quickstart_with_bazel"></a>
-## Quickstart *with Bazel*
-
-If you're already using Bazel add the following to your WORKSPACE:
-
-```starlark
-http_archive(                                                                                        
-  name = "jni-bind",                                                                                 
-  urls = ["https://github.com/google/jni-bind/archive/refs/tags/Release-0.1.0-alpha.zip"],           
-  strip_prefix = "jni-bind-Release-0.1.0-alpha",                                                     
-)
+```bash
+cd /tmp
+git clone https://github.com/google/jni-bind.git
+cd jni-bind
+bazel test  --cxxopt='-std=c++17' --repo_env=CC=clang ...
 ```
 
 <a name="usage"></a>
